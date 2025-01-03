@@ -8,279 +8,262 @@ import time
 # Global variables
 spray = False
 water_droplets = []
-car_position = -1.0  # Start from left side
+car_position = -1.0
 car_target = 0.0
-fire_positions = []
 fire_active = False
 house_positions = [
-    (-0.7, -0.2), (-0.35, -0.2), (0.0, -0.2), (0.35, -0.2), (0.7, -0.2),  # Top row
-    (-0.7, -0.5), (-0.35, -0.5), (0.0, -0.5), (0.35, -0.5), (0.7, -0.5)   # Bottom row
-] # House positions
+    (-0.7, -0.2), (-0.35, -0.2), (0.0, -0.2), (0.35, -0.2), (0.7, -0.2),
+    (-0.7, -0.5), (-0.35, -0.5), (0.0, -0.5), (0.35, -0.5), (0.7, -0.5)
+]
 current_burning_house = None
 car_moving = False
-flame_particles = []
 fire_start_time = 0
-FIRE_DURATION = 5
+FIRE_DURATION = 5  # Fire duration
 
-def generate_water_spray():
-    droplets = []
-    for _ in range(300):
-        x = random.uniform(-0.1, 0.1)
-        y = -math.sqrt(abs(x)) * 0.2 - 0.6
-        droplets.append([x, y])
-    return droplets
+def draw_circle_points(xc, yc, x, y):
+    glVertex2f(xc + x, yc + y)
+    glVertex2f(xc - x, yc + y)
+    glVertex2f(xc + x, yc - y)
+    glVertex2f(xc - x, yc - y)
+    glVertex2f(xc + y, yc + x)
+    glVertex2f(xc - y, yc + x)
+    glVertex2f(xc + y, yc - x)
+    glVertex2f(xc - y, yc - x)
+
+def midpoint_circle(xc, yc, radius):
+    """Draws a circle using GL_POINTS and the midpoint circle algorithm."""
+    x = 0
+    y = radius
+    p = 1 - radius
+    glBegin(GL_POINTS)
+    draw_circle_points(xc, yc, x, y)
+    while x < y:
+        x += 1
+        if p < 0:
+            p += 2 * x + 1
+        else:
+            y -= 1
+            p += 2 * (x - y) + 1
+        draw_circle_points(xc, yc, x, y)
+    glEnd()
+
+# 
+def drawCar():
+    glPointSize(2.0)
+    
+    # Main body - solid red
+    glBegin(GL_POINTS)
+    glColor3f(1.0, 0.0, 0.0)  # Pure red
+    for px in range(int((car_position - 0.12)*100), int((car_position + 0.12)*100)):
+        for py in range(-82, -70):
+            glVertex2f(px/100.0, py/100.0)
+    glEnd()
+
+    # Windows - solid blue
+    glBegin(GL_POINTS)
+    glColor3f(0.0, 0.0, 1.0)  # Pure blue
+    for px in range(int((car_position - 0.08)*100), int((car_position + 0.08)*100)):
+        for py in range(-70, -63):
+            glVertex2f(px/100.0, py/100.0)
+    glEnd()
+
+    # Headlights - solid yellow
+    for offset in [-0.09, 0.09]:
+        glColor3f(1.0, 1.0, 0.0)  # Pure yellow
+        midpoint_circle(car_position + offset, -0.75, 0.015)
+
+    # Wheels - solid black with silver rims
+    for wheel_x in [car_position - 0.08, car_position + 0.08]:
+        # Tire
+        glColor3f(0.0, 0.0, 0.0)  # Pure black
+        midpoint_circle(wheel_x, -0.79, 0.025)
+        # Rim
+        glColor3f(0.8, 0.8, 0.8)  # Silver
+        midpoint_circle(wheel_x, -0.79, 0.015)
+
+    # Water cannon - solid gray
+    glBegin(GL_POINTS)
+    glColor3f(0.5, 0.5, 0.5)  # Pure gray
+    for px in range(int((car_position - 0.02)*100), int((car_position + 0.02)*100)):
+        for py in range(-63, -58):
+            glVertex2f(px/100.0, py/100.0)
+    glEnd()
 
 def drawHouse(x, y, is_burning=False):
-    # Main house body
-    if is_burning:
-        glColor3f(1.0, 0.4, 0.4)  # Lighter red for burning house
-    else:
-        glColor3f(0.8, 0.0, 0.0)  # Dark red for normal house
-    
-    # House base
-    glBegin(GL_QUADS)
-    glVertex2f(x - 0.1, y)
-    glVertex2f(x + 0.1, y)
-    glVertex2f(x + 0.1, y + 0.2)
-    glVertex2f(x - 0.1, y + 0.2)
-    glEnd()
+    glPointSize(2.0)
 
-    # Roof
-    glColor3f(0.4, 0.2, 0.0)  # Brown roof
-    glBegin(GL_TRIANGLES)
-    glVertex2f(x - 0.15, y + 0.2)
-    glVertex2f(x + 0.15, y + 0.2)
-    glVertex2f(x, y + 0.35)
-    glEnd()
-
-    # Window
-    glColor3f(0.8, 0.9, 1.0)  # Light blue window
-    glBegin(GL_QUADS)
-    glVertex2f(x - 0.05, y + 0.05)
-    glVertex2f(x + 0.05, y + 0.05)
-    glVertex2f(x + 0.05, y + 0.15)
-    glVertex2f(x - 0.05, y + 0.15)
-    glEnd()
-
-    # Window cross
-    glColor3f(0.4, 0.2, 0.0)  # Brown window frame
-    glLineWidth(2.0)
-    glBegin(GL_LINES)
-    # Vertical line
-    glVertex2f(x, y + 0.05)
-    glVertex2f(x, y + 0.15)
-    # Horizontal line
-    glVertex2f(x - 0.05, y + 0.1)
-    glVertex2f(x + 0.05, y + 0.1)
-    glEnd()
-
-    # Door
-    glColor3f(0.4, 0.2, 0.0)  # Brown door
-    glBegin(GL_QUADS)
-    glVertex2f(x - 0.03, y)
-    glVertex2f(x + 0.03, y)
-    glVertex2f(x + 0.03, y + 0.08)
-    glVertex2f(x - 0.03, y + 0.08)
-    glEnd()
-
-    # Door knob
-    glColor3f(1.0, 0.8, 0.0)  # Golden knob
-    glPointSize(3.0)
+    # Main house body (solid color)
     glBegin(GL_POINTS)
-    glVertex2f(x + 0.02, y + 0.04)
+    if is_burning:
+        glColor3f(1.0, 0.4, 0.4)  # Burning red
+    else:
+        glColor3f(0.8, 0.2, 0.2)  # Dark red for normal house
+        
+    # Fill house body with solid color
+    for px in range(int((x - 0.1)*100), int((x + 0.1)*100)):
+        for py in range(int(y*100), int((y + 0.2)*100)):
+            glVertex2f(px/100.0, py/100.0)
     glEnd()
 
-    # Chimney
-    glColor3f(0.5, 0.5, 0.5)  # Gray chimney
-    glBegin(GL_QUADS)
-    glVertex2f(x + 0.06, y + 0.25)
-    glVertex2f(x + 0.09, y + 0.25)
-    glVertex2f(x + 0.09, y + 0.32)
-    glVertex2f(x + 0.06, y + 0.32)
-    glEnd()
-
-def drawCar():
-    # Main body
-    glColor3f(0.2, 0.2, 0.8)  # Dark blue
-    glBegin(GL_QUADS)
-    glVertex2f(car_position - 0.08, -0.8)
-    glVertex2f(car_position + 0.08, -0.8)
-    glVertex2f(car_position + 0.08, -0.65)
-    glVertex2f(car_position - 0.08, -0.65)
-    glEnd()
-
-    # Car top
-    glColor3f(0.1, 0.1, 0.7)  # Darker blue
-    glBegin(GL_QUADS)
-    glVertex2f(car_position - 0.06, -0.65)
-    glVertex2f(car_position + 0.06, -0.65)
-    glVertex2f(car_position + 0.04, -0.6)
-    glVertex2f(car_position - 0.04, -0.6)
+    # Roof (brown)
+    glBegin(GL_POINTS)
+    glColor3f(0.4, 0.2, 0.1)
+    for px in range(int((x - 0.15)*100), int((x + 0.15)*100)):
+        for py in range(int((y + 0.2)*100), int((y + 0.35)*100)):
+            real_px = px/100.0
+            real_py = py/100.0
+            if (real_py <= (y + 0.35) and
+               real_py >= (y + 0.2) and
+               abs(real_px - x) <= 0.15 * (1 - (real_py - (y + 0.2)) / 0.15)):
+                glVertex2f(real_px, real_py)
     glEnd()
 
     # Windows
-    glColor3f(0.8, 0.8, 1.0)  # Light blue
-    glBegin(GL_QUADS)
-    glVertex2f(car_position - 0.05, -0.65)
-    glVertex2f(car_position + 0.05, -0.65)
-    glVertex2f(car_position + 0.03, -0.61)
-    glVertex2f(car_position - 0.03, -0.61)
+    glBegin(GL_POINTS)
+    glColor3f(0.8, 0.9, 1.0)  # Light blue windows
+    # Left window
+    for px in range(int((x - 0.08)*100), int((x - 0.02)*100)):
+        for py in range(int((y + 0.07)*100), int((y + 0.13)*100)):
+            glVertex2f(px/100.0, py/100.0)
+    # Right window
+    for px in range(int((x + 0.02)*100), int((x + 0.08)*100)):
+        for py in range(int((y + 0.07)*100), int((y + 0.13)*100)):
+            glVertex2f(px/100.0, py/100.0)
     glEnd()
 
-    # Wheels
-    glColor3f(0.1, 0.1, 0.1)  # Black
-    for x_offset in [-0.06, 0.06]:
-        glBegin(GL_POLYGON)
-        for i in range(32):
-            angle = 2 * math.pi * i / 32
-            x = car_position + x_offset + 0.02 * math.cos(angle)
-            y = -0.79 + 0.02 * math.sin(angle)
-            glVertex2f(x, y)
-        glEnd()
+    # Door
+    glBegin(GL_POINTS)
+    glColor3f(0.4, 0.2, 0.1)  # Brown door
+    for px in range(int((x - 0.03)*100), int((x + 0.03)*100)):
+        for py in range(int(y*100), int((y + 0.08)*100)):
+            glVertex2f(px/100.0, py/100.0)
+    glEnd()
 
-    # Water cannon
+    # Door knob
+    glColor3f(0.8, 0.7, 0.0)  # Golden
+    midpoint_circle(x + 0.02, y + 0.04, 0.004)
+
+    # Chimney
+    glBegin(GL_POINTS)
     glColor3f(0.5, 0.5, 0.5)  # Gray
-    glBegin(GL_QUADS)
-    glVertex2f(car_position - 0.02, -0.6)
-    glVertex2f(car_position + 0.02, -0.6)
-    glVertex2f(car_position + 0.02, -0.55)
-    glVertex2f(car_position - 0.02, -0.55)
+    for px in range(int((x + 0.06)*100), int((x + 0.09)*100)):
+        for py in range(int((y + 0.25)*100), int((y + 0.32)*100)):
+            glVertex2f(px/100.0, py/100.0)
     glEnd()
-
-    # Front lights
-    glColor3f(1.0, 1.0, 0.0)  # Yellow
-    for x_offset in [-0.07, 0.07]:
-        glBegin(GL_QUADS)
-        glVertex2f(car_position + x_offset - 0.01, -0.77)
-        glVertex2f(car_position + x_offset + 0.01, -0.77)
-        glVertex2f(car_position + x_offset + 0.01, -0.75)
-        glVertex2f(car_position + x_offset - 0.01, -0.75)
+def drawRoads():
+    glPointSize(2.0)
+    
+    # Main parallel roads
+    for road_y in [-0.73, -0.43]:  # Two road positions
+        glBegin(GL_POINTS)
+        for px in range(-100, 100):
+            for py in range(int((road_y-0.12)*100), int((road_y+0.12)*100)):
+                x = px/100.0
+                y = py/100.0
+                
+                # Road texture with random dark spots
+                is_asphalt = random.random() < 0.1
+                if is_asphalt:
+                    glColor3f(0.3, 0.3, 0.3)  # Darker spots
+                else:
+                    glColor3f(0.4, 0.4, 0.4)  # Base road color
+                glVertex2f(x, y)
         glEnd()
 
-def drawRoad():
-    # Main roads
-    glColor3f(0.4, 0.4, 0.4)  # Dark gray for roads
-    for y_pos in [-0.35, -0.65]:
-        glBegin(GL_QUADS)
-        glVertex2f(-1.0, y_pos - 0.1)
-        glVertex2f(1.0, y_pos - 0.1)
-        glVertex2f(1.0, y_pos + 0.1)
-        glVertex2f(-1.0, y_pos + 0.1)
+        # Yellow center lines
+        glBegin(GL_POINTS)
+        glColor3f(1.0, 1.0, 0.0)
+        for px in range(-100, 100, 20):
+            for x in range(10):  # Dashed line length
+                glVertex2f((px + x)/100.0, road_y)
         glEnd()
 
-    # Road markings
-    glColor3f(1.0, 1.0, 1.0)  # White for markings
-    for y_pos in [-0.35, -0.65]:
-        glBegin(GL_LINES)
-        for x in range(-10, 11, 2):
-            x_pos = x / 10.0
-            glVertex2f(x_pos - 0.1, y_pos)
-            glVertex2f(x_pos + 0.1, y_pos)
+        # White edge lines
+        glBegin(GL_POINTS)
+        glColor3f(1.0, 1.0, 1.0)
+        for px in range(-100, 100):
+            glVertex2f(px/100.0, road_y - 0.12)  # Bottom edge
+            glVertex2f(px/100.0, road_y + 0.12)  # Top edge
         glEnd()
 
+    # Driveways to houses
+    glBegin(GL_POINTS)
+    for house_x, house_y in house_positions:
+        for px in range(int((house_x - 0.05)*100), int((house_x + 0.05)*100)):
+            for py in range(int((house_y - 0.1)*100), int(house_y*100)):
+                glColor3f(0.45, 0.45, 0.45)
+                glVertex2f(px/100.0, py/100.0)
+    glEnd()
 
 def drawFire():
     if current_burning_house is not None:
         x, y = house_positions[current_burning_house]
-        # Draw multiple flame particles
-        for i in range(15):
-            time_offset = time.time() * 5
-            # Oscillating movement
-            wave_x = math.sin(time_offset + i) * 0.02
-            wave_y = math.cos(time_offset + i * 0.5) * 0.01
-            
-            # Base positions
-            base_x = x + wave_x
-            base_y = y + 0.2 + wave_y
-            
-            # Color gradient from yellow to red
-            t = (math.sin(time_offset + i) + 1) * 0.5
-            glBegin(GL_TRIANGLES)
-            # Yellow core
-            glColor3f(1.0, 1.0, 0.0)
-            glVertex2f(base_x, base_y)
-            # Orange-red tips
-            glColor3f(1.0, 0.2, 0.0)
-            glVertex2f(base_x + 0.05, base_y + 0.1)
-            glVertex2f(base_x - 0.05, base_y + 0.1)
-            glEnd()
-            
-            # Small particles
-            glPointSize(2.0)
-            glBegin(GL_POINTS)
-            glColor3f(1.0, 0.5 + random.random() * 0.5, 0.0)
-            for _ in range(5):
-                spark_x = base_x + random.uniform(-0.05, 0.05)
-                spark_y = base_y + random.uniform(0.0, 0.15)
-                glVertex2f(spark_x, spark_y)
-            glEnd()
+        glPointSize(2.0)
+        glBegin(GL_POINTS)
+        glColor3f(1.0, 0.5, 0.0)
+        for i in range(80):
+            px = random.uniform(x - 0.08, x + 0.08)
+            py = random.uniform(y + 0.2, y + 0.35)
+            glVertex2f(px, py)
+        glEnd()
+
+def display():
+    glClear(GL_COLOR_BUFFER_BIT)
+    
+    drawRoads()  
+    for i, (hx, hy) in enumerate(house_positions):
+        drawHouse(hx, hy, i == current_burning_house)
+
+    drawCar()
+
+    if fire_active:
+        drawFire()
+
+    if water_droplets:
+        glColor3f(0.0, 0.7, 1.0)
+        glPointSize(3.0)
+        glBegin(GL_POINTS)
+        for dx, dy in water_droplets:
+            glVertex2f(car_position + dx, dy)
+        glEnd()
+
+    glutSwapBuffers()
 
 def update(value):
     global spray, water_droplets, fire_active, current_burning_house
     global car_position, car_target, car_moving, fire_start_time
-
+    
     current_time = time.time()
-
-    # Random fire generation
-    if not fire_active and random.random() < 0.01:  # 1% chance each update
+    
+    if not fire_active and random.random() < 0.01:
         fire_active = True
         fire_start_time = current_time
         current_burning_house = random.randint(0, len(house_positions) - 1)
         car_target = house_positions[current_burning_house][0]
         car_moving = True
 
-    # Car movement with smooth acceleration
     if car_moving:
         if abs(car_position - car_target) > 0.01:
             direction = 1 if car_target > car_position else -1
-            distance = abs(car_target - car_position)
-            speed = min(0.03, distance * 0.1)  # Adaptive speed
-            car_position += direction * speed
+            car_position += direction * 0.02
         else:
-            car_position = car_target  # Snap to exact position
             car_moving = False
             spray = True
 
-    # Water spray logic
     if spray and not car_moving:
-        water_droplets = generate_water_spray()
+        water_droplets = [(random.uniform(-0.1, 0.1), random.uniform(-0.7, -0.5)) 
+                          for _ in range(70)]
         if current_time - fire_start_time >= FIRE_DURATION:
-            if random.random() < 0.05:  # 5% chance to extinguish
+            if random.random() < 0.05:
                 fire_active = False
                 current_burning_house = None
                 spray = False
                 water_droplets = []
-                car_target = -1.0  # Return to start
+                car_target = -1.0
                 car_moving = True
 
-    # Clear water droplets when not spraying
-    if not spray:
-        water_droplets = []
-
     glutPostRedisplay()
-    glutTimerFunc(16, update, 0)  # ~60 FPS
-
-def display():
-    glClear(GL_COLOR_BUFFER_BIT)
-    
-    drawRoad()
-    drawCar()
-    
-    # Draw houses
-    for i, (x, y) in enumerate(house_positions):
-        drawHouse(x, y, i == current_burning_house)
-    
-    if fire_active:
-        drawFire()
-    
-    if water_droplets:
-        glColor3f(0.0, 0.7, 1.0)
-        glBegin(GL_POINTS)
-        for droplet in water_droplets:
-            glVertex2f(car_position + droplet[0], droplet[1])
-        glEnd()
-    
-    glutSwapBuffers()
+    glutTimerFunc(16, update, 0)
 
 def init():
     glClearColor(0.8, 0.9, 1.0, 1.0)
@@ -293,7 +276,7 @@ def main():
     glutInit()
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB)
     glutInitWindowSize(800, 600)
-    glutCreateWindow(b'Fire and Water Simulation')
+    glutCreateWindow(b'Fire & Water - GL_POINTS Only')
     glutDisplayFunc(display)
     glutTimerFunc(16, update, 0)
     init()
