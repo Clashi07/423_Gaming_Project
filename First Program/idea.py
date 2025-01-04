@@ -9,14 +9,14 @@ import time
 spray = False
 water_droplets = []
 car_position = -1.0
-car_target = 0.0
+# car_target = 0.0
 fire_active = False
 house_positions = [
     (-0.7, -0.2), (-0.35, -0.2), (0.0, -0.2), (0.35, -0.2), (0.7, -0.2),
     (-0.7, -0.5), (-0.35, -0.5), (0.0, -0.5), (0.35, -0.5), (0.7, -0.5)
 ]
 current_burning_house = None
-car_moving = False
+# car_moving = False
 fire_start_time = 0
 FIRE_DURATION = 5  # Fire duration
 
@@ -46,8 +46,6 @@ def midpoint_circle(xc, yc, radius):
             p += 2 * (x - y) + 1
         draw_circle_points(xc, yc, x, y)
     glEnd()
-
-# 
 def drawCar():
     glPointSize(2.0)
     
@@ -240,7 +238,7 @@ def display():
 
 def update(value):
     global spray, water_droplets, fire_active, current_burning_house
-    global car_position, car_target, car_moving, fire_start_time
+    global fire_start_time
     
     current_time = time.time()
 
@@ -249,32 +247,26 @@ def update(value):
         fire_active = True
         fire_start_time = current_time
         current_burning_house = random.randint(0, len(house_positions) - 1)
-        car_target = house_positions[current_burning_house][0]
-        car_moving = True
 
-    # Car movement toward the target (burning house)
-    if car_moving:
-        if abs(car_position - car_target) > 0.01:
-            car_position += 0.01 if car_position < car_target else -0.01
+    # Activate water spray when the car is near the burning house
+    if fire_active and current_burning_house is not None:
+        target_x = house_positions[current_burning_house][0]
+        if abs(car_position - target_x) < 0.1:  # If car is close enough to the fire
+            spray = True
+            water_droplets = generate_water_droplets()
         else:
-            car_position = car_target
-            car_moving = False
+            spray = False
+            water_droplets = []
 
-    # Activate water spray when the car reaches the target house
-    if not spray and car_position == car_target:
-        spray = True
-        # Start spraying water
-        water_droplets = generate_water_droplets()
-
-    # Manage the fire duration (5 seconds after starting)
+    # Manage the fire duration
     if fire_active and current_time - fire_start_time > FIRE_DURATION:
         fire_active = False
         spray = False
-        water_droplets = []  # Clear water droplets when fire is out
+        water_droplets = []
         current_burning_house = None
 
     glutPostRedisplay()
-    glutTimerFunc(1000 // 60, update, 0)  # Call update every frame (60 FPS)
+    glutTimerFunc(1000 // 60, update, 0)
 
 def generate_water_droplets():
     """Generates water droplets to simulate spraying."""
@@ -284,7 +276,18 @@ def generate_water_droplets():
         dy = random.uniform(-0.1, 0.1)  # Random y offset for the spray height
         droplets.append((dx, dy))
     return droplets
-
+#key press
+def keyboard(key, x, y):
+    global car_position
+    
+    key = key.decode('utf-8').lower()
+    
+    if key == 'a':  # Move left
+        car_position = max(car_position - 0.05, -1.0)  # Limit leftward movement
+    elif key == 'd':  # Move right
+        car_position = min(car_position + 0.05, 1.0)   # Limit rightward movement
+    
+    glutPostRedisplay()
 def init():
     glClearColor(0.8, 0.9, 1.0, 1.0)
     glMatrixMode(GL_PROJECTION)
@@ -298,6 +301,7 @@ def main():
     glutInitWindowSize(800, 600)
     glutCreateWindow(b'Fire & Water - GL_POINTS Only')
     glutDisplayFunc(display)
+    glutKeyboardFunc(keyboard)  # Add this line
     glutTimerFunc(16, update, 0)
     init()
     glutMainLoop()
